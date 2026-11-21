@@ -299,7 +299,7 @@ function updateBadges(){
 
 /* ---------- Google Sheets sync (Apps Script) ---------- */
 async function api(payload){
-  if(!S.cfg.scriptUrl)throw new Error('Google Sheets is not set up');
+  if(!S.cfg.scriptUrl)throw new Error('This app is not connected yet. Go to Settings (gear icon) and paste your setup link.');
   const res=await fetch(S.cfg.scriptUrl,{method:'POST',body:JSON.stringify({...payload,token:S.cfg.token})});
   let j;try{j=await res.json()}catch(e){throw new Error('Unexpected reply from Apps Script — check the deployment URL and access ("Anyone")')}
   if(!j.ok)throw new Error(j.error||'Request failed');return j;
@@ -328,6 +328,19 @@ function syncHtml(){
   const m={idle:['','Sheets'],busy:['busy','Syncing…'],ok:['ok','Synced'],err:['err','Sync error']}[U.sync];
   return `<span class="dot ${m[0]}"></span>${m[1]}${S.queue.length&&U.sync!=='busy'?` · ${S.queue.length} pending`:''}`;
 }
+
+function applyCfg(str){
+  try{
+    let code=String(str||'').trim();const i=code.indexOf('cfg=');if(i>=0)code=code.slice(i+4);
+    code=code.split(/[\s&]/)[0];
+    const c=JSON.parse(atob(code));
+    if(!c.u||!/^https:\/\/script\.google\.com\//.test(c.u))return false;
+    S.cfg.scriptUrl=c.u;S.cfg.token=c.t||'';S.cfg.aiMode='script';save();return true;
+  }catch(e){return false}
+}
+const connectCard=()=>`<div class="card"><b>Connect to your Google Sheet</b><div class="hint">Copy your setup link (the long one with <code>#cfg=</code>) and paste it here. A home-screen app keeps its storage separate from Safari, so opening the link in Safari doesn't connect this app.</div>
+  <textarea id="cfgpaste" rows="3" placeholder="https://msdarshan.github.io/trackmyfood/index.html#cfg=…" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+  <button class="btn" data-act="cfgconnect">Connect</button></div>`;
 
 /* ---------- Claude vision ---------- */
 async function callClaude(body){
@@ -546,7 +559,7 @@ function render(){
     .map(([k,l,ic])=>k==='fab'?`<button class="fab" data-act="fab" aria-label="Add food">${svg(ic)}</button>`:`<button class="${v===k?'on':''}" data-act="tab" data-tab="${k}">${svg(ic)}<span>${l}</span>${k==='schedule'?'<span class="qbadge" id="schbadge" hidden></span>':''}</button>`).join('');
   const head=t=>`<header class="top"><h1>${t}</h1><div class="sync" id="syncst">${syncHtml()}</div>${v==='settings'?'':`<button class="iconbtn" data-act="tab" data-tab="settings" aria-label="Settings">${svg(I.gear)}</button>`}</header>`;
   const app=$('#app');
-  if(v==='today')app.innerHTML=head('TrackMyFood')+viewToday();
+  if(v==='today')app.innerHTML=head('TrackMyFood')+(S.cfg.scriptUrl?'':connectCard())+viewToday();
   else if(v==='schedule')app.innerHTML=head('Schedule')+viewSchedule();
   else if(v==='meals')app.innerHTML=head('My meals')+viewMeals();
   else if(v==='trends')app.innerHTML=head('Trends')+viewTrends();
@@ -616,7 +629,7 @@ function viewTrends(){
 }
 function viewSettings(){
   const t=targets(),c=S.cfg;
-  return `<div class="card"><b>Daily targets</b><div class="hint">Defaults follow ICMR-NIN adult guidance. Set them to your own goal.</div>
+  return (c.scriptUrl?'':connectCard())+`<div class="card"><b>Daily targets</b><div class="hint">Defaults follow ICMR-NIN adult guidance. Set them to your own goal.</div>
   <div class="grid3">${NK.map(k=>`<div><label class="f">${NM[k][0]} (${NM[k][1]})</label><input data-target="${k}" type="number" inputmode="decimal" value="${t[k]}"></div>`).join('')}</div></div>
   <div class="card"><b>Google Sheets</b><div class="hint">Paste the Web App URL and token from your Apps Script deployment (see README).</div>
   <label class="f">Apps Script Web App URL</label><input data-cfg="scriptUrl" value="${esc(c.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec">
@@ -696,6 +709,11 @@ const A={
     put(o.kind,rec);closeSheet();render();if(o.kind==='rule')checkSchedule(true);toast('Saved')},
   cdel:()=>{const o=top()._o;remove(o.kind,o.rec);closeSheet();render();toast('Deleted')},
   review:()=>checkSchedule(true),
+  cfgconnect:async()=>{const v=($('#cfgpaste')||{}).value;
+    if(!applyCfg(v)){toast('That does not look like your setup link');return}
+    toast('Connecting…');render();
+    try{await api({action:'ping'});toast('Connected to your Google Sheet');syncNow(true)}
+    catch(e){toast(e.message)}},
   pok:d=>{decide(S.rules[d.id],d.d,true);toast('Added');afterDecide()},
   pskip:d=>{decide(S.rules[d.id],d.d,false);afterDecide()},
   pall:()=>{pendingList().forEach(p=>decide(p.r,p.d,true));toast('Added');afterDecide()},
@@ -755,7 +773,7 @@ $('#importIn').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{con
 /* ---------- boot ---------- */
 // One-time setup link: index.html#cfg=<base64 {"u":scriptUrl,"t":token}> stores the config and clears the hash.
 if(location.hash.startsWith('#cfg=')){
-  try{const c=JSON.parse(atob(location.hash.slice(5)));if(c.u)S.cfg.scriptUrl=c.u;if(c.t)S.cfg.token=c.t;save();setTimeout(()=>toast('Connected to your Google Sheet'),300)}catch(e){}
+  if(applyCfg(location.hash))setTimeout(()=>{toast('Connected to your Google Sheet');syncNow(true)},300);
   try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
 }
 function afterDecide(){const sh=stack.length?top():null;if(sh&&sh._o.prompt)drawPrompt(sh);render()}
