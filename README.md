@@ -56,3 +56,10 @@ In the app, go to **Settings** and fill in:
 - Values in the food database are typical home-recipe estimates. To change them, edit `foods.js` (one line per food).
 - Gemini model: `gemini-flash-latest`, with automatic fallback to free Flash-Lite models. To pin one, set `GEMINI_MODEL` in Script properties.
 - Photo calls go through Apps Script, so your API key never sits on the phone. To use a paid Claude key from the phone instead, choose it in Settings → Photo recognition.
+
+## Profiles (multi-user)
+- One site, one Apps Script and one sheet serve everyone. Each row in `Log`, `Daily`, `MyMeals`, `Recurring`, `CustomFoods` and `Settings` has a `user_id`. Rows without one belong to the main admin.
+- The main admin signs in with `APP_TOKEN`. Other profiles live in the `Users` tab, which stores only a SHA-256 hash of each token.
+- Admins: Settings → Profiles → Add profile creates a one-time setup link to send to that person. From the same screen you can view a profile's log (read-only), make a new link (the old one stops working), change the role, or disable the profile.
+- A user's token can only read and write that user's own rows. Only admins can view other profiles.
+- Everyone shares the Gemini free-tier quota on the admin's key.
