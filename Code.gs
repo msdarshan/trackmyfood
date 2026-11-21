@@ -92,6 +92,7 @@ function doPost(e) {
         var r = pull_(req.from, target);
         r.me = me;
         return out_(r);
+      case 'summary': return out_(summary_(req, me));
       case 'vision': return out_(vision_(req));
       case 'claude': return out_(claude_(req.body));
       case 'users': return out_(isAdmin ? {ok: true, users: listUsers_()} : denied_());
@@ -293,6 +294,31 @@ function generic_(name, uid) {
     try { var o = JSON.parse(r[4]); o.updatedAt = +r[2] || o.updatedAt; o.deleted = isTrue_(r[3]); return o; }
     catch (e) { return null; }
   }).filter(function (x) { return x; });
+}
+
+/* ---------- summary for the home-screen widget ---------- */
+var DEF_TARGETS = {kcal: 2000, pro: 90, carb: 250, fat: 65, fib: 30};
+
+function summary_(req, me) {
+  var today = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(req.date || '')) ? String(req.date) : ymd_(new Date());
+  var p = today.split('-').map(Number), days = [], sums = {};
+  for (var i = 6; i >= 0; i--) {
+    var d = Utilities.formatDate(new Date(Date.UTC(p[0], p[1] - 1, p[2] - i)), 'UTC', 'yyyy-MM-dd');
+    days.push(d); sums[d] = {date: d, kcal: 0, pro: 0, carb: 0, fat: 0, fib: 0, items: 0};
+  }
+  var log = sheet_('Log'), last = log.getLastRow();
+  if (last > 1) {
+    log.getRange(2, 1, last - 1, LOG_HEAD.length).getValues().forEach(function (r) {
+      var s = sums[ymd_(r[1])];
+      if (!s || uidOf_(r[LOG_USER]) !== me.id || isTrue_(r[23])) return;
+      s.kcal += +r[7] || 0; s.pro += +r[8] || 0; s.carb += +r[9] || 0; s.fat += +r[10] || 0; s.fib += +r[11] || 0; s.items++;
+    });
+  }
+  var st = generic_('Settings', me.id)[0], t = {};
+  Object.keys(DEF_TARGETS).forEach(function (k) { t[k] = (st && st.targets && +st.targets[k]) || DEF_TARGETS[k]; });
+  var week = days.map(function (d) { var s = sums[d]; return {date: d, kcal: Math.round(s.kcal), pro: round_(s.pro), items: s.items}; });
+  var td = sums[today];
+  return {ok: true, name: me.name, date: today, today: {kcal: Math.round(td.kcal), pro: round_(td.pro), carb: round_(td.carb), fat: round_(td.fat), fib: round_(td.fib), items: td.items}, targets: t, week: week};
 }
 
 /* ---------- Claude proxy (used only if no Gemini key) ---------- */

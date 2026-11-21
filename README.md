@@ -63,3 +63,14 @@ In the app, go to **Settings** and fill in:
 - Admins: Settings → Profiles → Add profile creates a one-time setup link to send to that person. From the same screen you can view a profile's log (read-only), make a new link (the old one stops working), change the role, or disable the profile.
 - A user's token can only read and write that user's own rows. Only admins can view other profiles.
 - Everyone shares the Gemini free-tier quota on the admin's key.
+
+## iPhone widget (Scriptable)
+A PWA can't provide native widgets, so the widget runs in the free **Scriptable** app.
+1. Install Scriptable from the App Store.
+2. In TrackMyFood go to Settings → iPhone widget → **Copy widget script**. Your personal link is embedded in the copy.
+3. In Scriptable tap +, paste, name it `TrackMyFood`, and tap ▶︎ once.
+4. Add a Scriptable widget (Small or Medium) to the home screen, then Edit Widget → Script: TrackMyFood.
+   Lock-screen circular, rectangular and inline sizes work too.
+- Data comes from the backend's `summary` action: today's totals, targets and the last 7 days for the calling profile.
+- iOS refreshes widgets on its own schedule (about every 15 minutes or more). The last result is cached for offline use.
+- Source: `widget/TrackMyFood-Widget.js`. A plain copy has an empty `PRESET`, so it asks for your setup link the first time it runs.

@@ -654,7 +654,16 @@ function viewSettings(){
   const t=targets(),c=S.cfg;
   const prof=S.me&&S.me.role==='admin'?`<div class="card"><b>Profiles</b><div class="hint">You're an admin. Add people, send them their setup link, and view their logs read-only.</div><button class="btn" data-act="profiles">${svg(I.users)} Manage profiles</button></div>`
     :S.me?`<div class="card"><b>Profile</b><div class="hint">Signed in as <b>${esc(S.me.name)}</b>. Your data is visible to you and your admin.</div></div>`:'';
-  return (c.scriptUrl?'':connectCard())+prof+`<div class="card"><b>Daily targets</b><div class="hint">Defaults follow ICMR-NIN adult guidance. Set them to your own goal.</div>
+  const widgetCard=c.scriptUrl?`<div class="card"><b>iPhone widget</b><div class="hint">Shows today's calories and protein on your home screen or lock screen, using the free <b>Scriptable</b> app.</div>
+    <ol class="hint" style="padding-left:18px;margin:8px 0 0">
+      <li>Install <b>Scriptable</b> from the App Store.</li>
+      <li>Tap <b>Copy widget script</b> below. Your personal link is already inside it.</li>
+      <li>In Scriptable tap <b>+</b>, paste, and name it <b>TrackMyFood</b>. Tap ▶︎ once to preview it.</li>
+      <li>Long-press the home screen → <b>+</b> → Scriptable → pick Small or Medium → Add. Long-press the new widget → <b>Edit Widget</b> → Script: <b>TrackMyFood</b>.</li>
+    </ol>
+    <button class="btn" data-act="copyWidget">Copy widget script</button>
+    <div class="hint">For the lock screen: customise the lock screen → add a Scriptable widget → choose TrackMyFood. The widget refreshes about every 15 minutes, and tapping it opens this app.</div></div>`:'';
+  return (c.scriptUrl?'':connectCard())+prof+widgetCard+`<div class="card"><b>Daily targets</b><div class="hint">Defaults follow ICMR-NIN adult guidance. Set them to your own goal.</div>
   <div class="grid3">${NK.map(k=>`<div><label class="f">${NM[k][0]} (${NM[k][1]})</label><input data-target="${k}" type="number" inputmode="decimal" value="${t[k]}"></div>`).join('')}</div></div>
   <div class="card"><b>Google Sheets</b><div class="hint">Paste the Web App URL and token from your Apps Script deployment (see README).</div>
   <label class="f">Apps Script Web App URL</label><input data-cfg="scriptUrl" value="${esc(c.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec">
@@ -668,6 +677,11 @@ function viewSettings(){
   <button class="btn danger" data-act="wipe">Erase data on this device</button></div>
   <div class="hint" style="text-align:center;margin-bottom:20px">Nutrition values are estimates. Check labels for packaged foods.</div>`;
 }
+
+/* ---------- iPhone widget (Scriptable) ---------- */
+let WIDGET_SRC='';
+function loadWidgetSrc(){fetch('widget/TrackMyFood-Widget.js',{cache:'no-cache'}).then(r=>r.ok?r.text():'').then(t=>{if(t.includes('const PRESET = "";'))WIDGET_SRC=t}).catch(()=>{})}
+function widgetCode(){return WIDGET_SRC.replace('const PRESET = "";','const PRESET = "'+btoa(JSON.stringify({u:S.cfg.scriptUrl,t:S.cfg.token}))+'";')}
 
 /* ---------- profiles (admin) ---------- */
 async function openProfiles(){
@@ -753,6 +767,11 @@ const A={
     put(o.kind,rec);closeSheet();render();if(o.kind==='rule')checkSchedule(true);toast('Saved')},
   cdel:()=>{const o=top()._o;remove(o.kind,o.rec);closeSheet();render();toast('Deleted')},
   review:()=>checkSchedule(true),
+  copyWidget:()=>{
+    if(!WIDGET_SRC){loadWidgetSrc();toast('Loading the widget script, tap again in a second');return}
+    const code=widgetCode();
+    const fallback=()=>{const sh=openSheet(`<div class="sheet-h"><b>Widget script</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div><div class="hint">Select all of the text below and copy it into a new Scriptable script. It contains your personal link, so keep it private.</div><textarea id="wcode" rows="10" readonly style="margin-top:8px;font-size:12px">${esc(code)}</textarea>`);const t=$('#wcode',sh);t.focus();t.select()};
+    try{navigator.clipboard.writeText(code).then(()=>toast('Widget script copied. Paste it into Scriptable.'),fallback)}catch(e){fallback()}},
   profiles:()=>openProfiles(),
   pview:async d=>{closeAll();toast('Loading '+d.name+'…');
     try{const j=await api({action:'pull',asUser:d.id,from:addDays(today(),-90)});
@@ -847,7 +866,7 @@ if(location.hash.startsWith('#cfg=')){
   try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
 }
 function afterDecide(){const sh=stack.length?top():null;if(sh&&sh._o.prompt)drawPrompt(sh);render()}
-render();checkSchedule(true);
+render();checkSchedule(true);loadWidgetSrc();
 if(S.cfg.scriptUrl)syncNow(true).then(()=>checkSchedule());
 setInterval(()=>checkSchedule(),60000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){snoozeUntil=0;checkSchedule(true);if(S.cfg.scriptUrl)syncNow(true).then(()=>checkSchedule())}});
