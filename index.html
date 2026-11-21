@@ -377,9 +377,15 @@ async function fileToJpeg(file){
 }
 async function analysePhoto(dataUrl,hint){
   const b64=dataUrl.split(',')[1];
-  const body={model:S.cfg.model||defCfg.model,max_tokens:2000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:photoPrompt(hint)}]}]};
-  const j=await callClaude(body);
-  const txt=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
+  let txt;
+  if(S.cfg.aiMode==='direct'){
+    const body={model:S.cfg.model||defCfg.model,max_tokens:2000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:photoPrompt(hint)}]}]};
+    const j=await callClaude(body);
+    txt=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
+  }else{
+    const j=await api({action:'vision',image:b64,prompt:photoPrompt(hint)});
+    txt=j.text||'';
+  }
   const a=txt.indexOf('{'),b=txt.lastIndexOf('}');if(a<0||b<a)throw new Error('The AI did not return a food list. Try again or add a hint.');
   const out=JSON.parse(txt.slice(a,b+1));
   const items=(out.items||[]).map(x=>{
@@ -636,10 +642,9 @@ function viewSettings(){
   <label class="f">Token</label><input data-cfg="token" value="${esc(c.token)}" placeholder="APP_TOKEN from the script's Execution log">
   <div class="grid2"><button class="btn ghost" data-act="testSheets">Test connection</button><button class="btn ghost" data-act="syncAll">Sync now</button></div>
   <div class="hint" id="sheetmsg">${S.lastSync?'Last synced '+new Date(S.lastSync).toLocaleString():''}${U.syncMsg?' · '+esc(U.syncMsg):''}</div></div>
-  <div class="card"><b>Photo recognition (Claude)</b>
-  <label class="f">How to call Claude</label><select data-cfg="aiMode"><option value="script" ${c.aiMode==='script'?'selected':''}>Through Apps Script (key kept in Google)</option><option value="direct" ${c.aiMode==='direct'?'selected':''}>Directly from this device</option></select>
-  ${c.aiMode==='direct'?`<label class="f">Claude API key</label><input data-cfg="apiKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-…"><div class="hint">Stored only in this browser.</div>`:`<div class="hint">Set ANTHROPIC_API_KEY in the Apps Script project's Script properties.</div>`}
-  <label class="f">Model</label><input data-cfg="model" value="${esc(c.model)}"></div>
+  <div class="card"><b>Photo recognition</b>
+  <label class="f">AI provider</label><select data-cfg="aiMode"><option value="script" ${c.aiMode==='script'?'selected':''}>Google Gemini via Apps Script (free tier)</option><option value="direct" ${c.aiMode==='direct'?'selected':''}>Claude API directly from this device (paid)</option></select>
+  ${c.aiMode==='direct'?`<label class="f">Claude API key</label><input data-cfg="apiKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-…"><div class="hint">Stored only in this browser.</div><label class="f">Claude model</label><input data-cfg="model" value="${esc(c.model)}">`:`<div class="hint">Uses the GEMINI_API_KEY saved in your Apps Script settings. The key never touches this phone.</div>`}</div>
   <div class="card"><b>Your data</b><div class="grid2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Import backup</button></div>
   <button class="btn danger" data-act="wipe">Erase data on this device</button></div>
   <div class="hint" style="text-align:center;margin-bottom:20px">Nutrition values are estimates. Check labels for packaged foods.</div>`;

@@ -5,7 +5,9 @@
  *
  * Script properties (Project Settings > Script properties):
  *   APP_TOKEN          created by setup(); paste it into the app's Settings
- *   ANTHROPIC_API_KEY  your Claude API key, used for photo recognition
+ *   GEMINI_API_KEY     Google AI Studio key (free tier) used for photo recognition
+ *   ANTHROPIC_API_KEY  optional: Claude API key, used only if GEMINI_API_KEY is not set
+ *   GEMINI_MODEL       optional: override the Gemini model id
  */
 
 var NK = ['kcal','pro','carb','fat','fib','sug','sfat','na','k','ca','fe','vc','va'];
@@ -40,7 +42,7 @@ function setup() {
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty('APP_TOKEN')) props.setProperty('APP_TOKEN', Utilities.getUuid());
   Logger.log('APP_TOKEN = ' + props.getProperty('APP_TOKEN'));
-  if (!props.getProperty('ANTHROPIC_API_KEY')) Logger.log('Remember to add ANTHROPIC_API_KEY in Project Settings > Script properties.');
+  if (!props.getProperty('GEMINI_API_KEY') && !props.getProperty('ANTHROPIC_API_KEY')) Logger.log('Remember to add GEMINI_API_KEY in Project Settings > Script properties.');
 }
 
 function sheet_(name) {
@@ -68,6 +70,7 @@ function doPost(e) {
     if (req.action === 'push') return out_(push_(req.ops || []));
     if (req.action === 'pull') return out_(pull_(req.from));
     if (req.action === 'claude') return out_(claude_(req.body));
+    if (req.action === 'vision') return out_(vision_(req));
     return out_({ok: false, error: 'Unknown action'});
   } catch (err) {
     return out_({ok: false, error: String(err && err.message || err)});
@@ -197,4 +200,63 @@ function claude_(body) {
   var j = JSON.parse(res.getContentText());
   if (res.getResponseCode() >= 300) return {ok: false, error: (j.error && j.error.message) || ('Claude API error ' + res.getResponseCode())};
   return {ok: true, data: j};
+}
+
+/* ---------- Photo recognition: Gemini (free tier) first, Claude as fallback ---------- */
+var GEMINI_MODELS = ['gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+
+function vision_(req) {
+  var props = PropertiesService.getScriptProperties();
+  if (!req.image || !req.prompt) return {ok: false, error: 'Bad request'};
+  var gkey = props.getProperty('GEMINI_API_KEY');
+  if (gkey) return gemini_(gkey, req, props.getProperty('GEMINI_MODEL'));
+  if (props.getProperty('ANTHROPIC_API_KEY')) {
+    var r = claude_({model: req.claudeModel || 'claude-sonnet-5-5', max_tokens: 2000, messages: [{role: 'user', content: [
+      {type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: req.image}}, {type: 'text', text: req.prompt}]}]});
+    if (!r.ok) return r;
+    return {ok: true, text: (r.data.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(''), provider: 'claude'};
+  }
+  return {ok: false, error: 'No AI key set. Add GEMINI_API_KEY in Apps Script > Project Settings > Script properties.'};
+}
+
+function gemini_(key, req, override) {
+  var models = (override ? [override] : []).concat(GEMINI_MODELS);
+  var lastErr = '';
+  for (var i = 0; i < models.length; i++) {
+    var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[i]) + ':generateContent', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {'x-goog-api-key': key},
+      payload: JSON.stringify({
+        contents: [{role: 'user', parts: [{inline_data: {mime_type: 'image/jpeg', data: req.image}}, {text: req.prompt}]}],
+        generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode(), j = {};
+    try { j = JSON.parse(res.getContentText()); } catch (e) {}
+    if (code < 300) {
+      var parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+      var text = parts.map(function (p) { return p.text || ''; }).join('');
+      if (text) return {ok: true, text: text, provider: 'gemini', model: models[i]};
+      lastErr = 'Gemini returned no text' + (j.promptFeedback && j.promptFeedback.blockReason ? ' (' + j.promptFeedback.blockReason + ')' : '');
+      continue;
+    }
+    lastErr = (j.error && j.error.message) || ('Gemini error ' + code);
+    if (code === 400 || code === 401 || code === 403) {
+      if (/API key/i.test(lastErr)) break; // bad key: no point trying other models
+    }
+    // 404 (model unavailable) or 429 (quota) -> try the next model
+  }
+  return {ok: false, error: lastErr};
+}
+
+/* Run this once from the editor to check the Gemini key without the app. */
+function testGemini() {
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent', {
+    method: 'post', contentType: 'application/json', headers: {'x-goog-api-key': key}, muteHttpExceptions: true,
+    payload: JSON.stringify({contents: [{parts: [{text: 'Reply with the single word OK'}]}]})
+  });
+  Logger.log(res.getResponseCode() + ' ' + res.getContentText().slice(0, 300));
 }

@@ -17,7 +17,8 @@ A dark-themed PWA for tracking Indian meals, macros and micronutrients. You can 
    This creates the tabs `Log`, `Daily`, `MyMeals`, `Recurring`, `CustomFoods` and `Settings`.
    Open **Execution log** and copy the `APP_TOKEN = …` value.
 4. Go to **Project Settings (gear) → Script properties → Add property**:
-   `ANTHROPIC_API_KEY` = your key from console.anthropic.com
+   `GEMINI_API_KEY` = a free key from https://aistudio.google.com/apikey
+   (Optional: `ANTHROPIC_API_KEY` is used instead if no Gemini key is set. Claude API needs prepaid Console credits.)
 5. Go to **Deploy → New deployment → type: Web app**.
    Execute as **Me**, who has access **Anyone**. Deploy and copy the `/exec` URL.
    (A request without the token is rejected, so "Anyone" does not mean anyone can read your data.)
@@ -40,7 +41,7 @@ In the app, go to **Settings** and fill in:
 ## How it works
 - **Meals**: Breakfast, Morning snack, Lunch, Evening snack, Dinner. Each shows kcal and P/C/F, and the ⋯ menu shows every nutrient.
 - **Nutrients tracked**: kcal, protein, carbs, fat, fibre, sugar, saturated fat, sodium, potassium, calcium, iron, vitamin C and vitamin A. They are compared with targets you can edit (defaults follow ICMR-NIN guidance for adults).
-- **Photo**: Snap or Upload. The photo is resized to 1280 px and sent to Claude, which names each item and estimates quantity (pieces, katori, grams). Items that match the built-in database use its values; anything else uses Claude's estimate and is marked "AI estimate". Low-confidence items are marked "check". You review and edit everything before it's logged. A hint like "3 idlis, tea without sugar" makes the result more accurate.
+- **Photo**: Snap or Upload. The photo is resized to 1280 px and sent through Apps Script to Google Gemini (free tier), which names each item and estimates quantity (pieces, katori, grams). Items that match the built-in database use its values; anything else uses Claude's estimate and is marked "AI estimate". Low-confidence items are marked "check". Note: on Gemini's free tier, Google may use prompts and photos to improve its products. You review and edit everything before it's logged. A hint like "3 idlis, tea without sugar" makes the result more accurate.
 - **My meals**: combos such as idli + sambar + chutney that you log in one tap. You can save any day's meal slot or any photo result as a My Meal.
 - **Schedule tab**: regular meals (e.g. 7:00 filter coffee, 4:30 pm tea + 2 Marie biscuits), each with a time, days and meal slot. **Log** adds one to today with a single tap; tap it again to undo. When the scheduled time passes, a **popup asks you to Add or Skip**. Nothing is logged without your OK. "Decide later" hides the popup for 30 minutes, and the Today screen shows a banner until you decide. The app only checks while it's open (a web app can't send background notifications), so prompts for today and yesterday wait for the next time you open it.
 - **Custom foods**: enter values from the label of packaged items (e.g. your whey protein), per serving.
@@ -53,5 +54,5 @@ In the app, go to **Settings** and fill in:
 
 ## Notes
 - Values in the food database are typical home-recipe estimates. To change them, edit `foods.js` (one line per food).
-- The default model is `claude-sonnet-5-5`. You can change it in Settings.
-- Photo calls go through Apps Script, so your API key never sits on the phone. If you'd rather call Claude from the phone directly, use Settings → "Directly from this device".
+- Gemini model: `gemini-flash-latest`, with automatic fallback to free Flash-Lite models. To pin one, set `GEMINI_MODEL` in Script properties.
+- Photo calls go through Apps Script, so your API key never sits on the phone. To use a paid Claude key from the phone instead, choose it in Settings → Photo recognition.
