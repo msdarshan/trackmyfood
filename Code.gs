@@ -28,9 +28,10 @@ var SHEETS = {
   Recurring: GENERIC_HEAD,
   CustomFoods: GENERIC_HEAD,
   Settings: GENERIC_HEAD,
+  Weights: GENERIC_HEAD,
   Users: ['id','name','role','token_hash','active','created_at','updated_at']
 };
-var KIND_SHEET = {meal:'MyMeals', rule:'Recurring', food:'CustomFoods', settings:'Settings'};
+var KIND_SHEET = {meal:'MyMeals', rule:'Recurring', food:'CustomFoods', settings:'Settings', weight:'Weights'};
 var ADMIN_ID = 'admin';
 var LOG_USER = LOG_HEAD.indexOf('user_id');
 var DAILY_USER = SHEETS.Daily.indexOf('user_id');
@@ -285,7 +286,7 @@ function pull_(from, uid) {
       });
     });
   }
-  var res = {ok: true, entries: entries, meals: generic_('MyMeals', uid), rules: generic_('Recurring', uid), foods: generic_('CustomFoods', uid)};
+  var res = {ok: true, entries: entries, meals: generic_('MyMeals', uid), rules: generic_('Recurring', uid), foods: generic_('CustomFoods', uid), weights: generic_('Weights', uid)};
   var st = generic_('Settings', uid);
   if (st.length) res.settings = st[0];
   return res;
