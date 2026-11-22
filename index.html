@@ -169,6 +169,14 @@ header.top .iconbtn{background:var(--card)}
 .subhead .iconbtn svg{width:22px;height:22px}
 .steps{padding-left:20px;margin:10px 0 0;color:var(--mute);font-size:14px}.steps li{margin:6px 0}
 details.adv summary{cursor:pointer;list-style:none}details.adv summary::-webkit-details-marker{display:none}details.adv summary b::after{content:' ›';color:var(--mute)}
+.bar,.ringbox{cursor:pointer}
+.chev.sm{font-size:15px;color:var(--mute);font-weight:400}
+table.micro.tap tr{cursor:pointer}
+.bd-head{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}.bd-head b{font-size:28px}.bd-head span{color:var(--mute);font-size:14px}
+.bd-row{padding:9px 0;border-bottom:1px solid var(--line)}
+.bd-top{display:flex;align-items:baseline;gap:8px}.bd-n{flex:1;min-width:0}.bd-n small{display:block;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-top b{white-space:nowrap;font-size:14.5px}.bd-p{width:42px;text-align:right;color:var(--mute);font-size:13px}
+.bd-row .track{margin-top:6px;height:5px}
 .kc .tk{color:var(--mute);font-weight:500}
 .track.mt{margin-top:8px;height:5px}
 .plan{background:var(--card2);border-radius:14px;padding:12px;margin-top:12px}
@@ -263,7 +271,7 @@ function searchFoods(q){
 }
 
 /* ---------- state ---------- */
-const APP_VERSION='15';
+const APP_VERSION='16';
 const KEY='tmf_v1';
 const defCfg={scriptUrl:'',token:'',aiMode:'script',apiKey:'',model:'claude-sonnet-5-5'};
 function defaultState(){return{entries:{},meals:{},rules:{},foods:{},weights:{},settings:{id:'settings',targets:{...DEF_T},updatedAt:0},queue:[],cfg:{...defCfg},lastSync:0}}
@@ -547,10 +555,10 @@ const top=()=>stack.length?$('.sheet',stack[stack.length-1]):null;
 let toastT;function toast(m){let t=$('.toast');if(!t){t=document.createElement('div');t.className='toast';document.body.appendChild(t)}t.textContent=m;clearTimeout(toastT);toastT=setTimeout(()=>t.remove(),2600)}
 const slotSelect=(id,sel)=>`<select id="${id}">${SLOTS.map(s=>`<option value="${s[0]}" ${s[0]===sel?'selected':''}>${s[1]}</option>`).join('')}</select>`;
 const nutGrid=n=>`<div class="nut"><div><b>${fmt(n.kcal,'kcal')}</b><span>kcal</span></div><div><b style="color:var(--pro)">${fmt(n.pro,'pro')}g</b><span>Protein</span></div><div><b style="color:var(--carb)">${fmt(n.carb,'carb')}g</b><span>Carbs</span></div><div><b style="color:var(--fat)">${fmt(n.fat,'fat')}g</b><span>Fat</span></div></div>`;
-function microTable(n,t){
-  return `<table class="micro">${NK.map(k=>{const v=n[k]||0,tg=t?t[k]:0,p=tg?Math.min(100,v/tg*100):0;
+function microTable(n,t,tap){
+  return `<table class="micro${tap?' tap':''}">${NK.map(k=>{const v=n[k]||0,tg=t?t[k]:0,p=tg?Math.min(100,v/tg*100):0;
     const col=k==='pro'?'var(--pro)':k==='carb'?'var(--carb)':k==='fat'||k==='sfat'?'var(--fat)':k==='fib'?'var(--fib)':LIMITS.has(k)&&tg&&v>tg?'var(--bad)':'var(--acc)';
-    return `<tr><td>${NM[k][0]}</td><td><b>${fmt(v,k)}</b> ${NM[k][1]}${tg?` <small style="color:var(--mute)">/ ${fmt(tg,k)}</small>`:''}</td><td>${tg?`<div class="track"><div class="fill" style="width:${p}%;background:${col}"></div></div>`:''}</td></tr>`}).join('')}</table>`;
+    return `<tr${tap?` data-act="macro" data-k="${k}"`:''}><td>${NM[k][0]}${tap?' <span class="chev sm">›</span>':''}</td><td><b>${fmt(v,k)}</b> ${NM[k][1]}${tg?` <small style="color:var(--mute)">/ ${fmt(tg,k)}</small>`:''}</td><td>${tg?`<div class="track"><div class="fill" style="width:${p}%;background:${col}"></div></div>`:''}</td></tr>`}).join('')}</table>`;
 }
 
 /* ---------- item sheet (add / edit / pick) ---------- */
@@ -745,10 +753,10 @@ function render(){
 function viewToday(){
   const d=U.date,es=dayEntries(d),tot=sumN(es),t=targets(),RO=!!U.view;
   const R=52,C=2*Math.PI*R,p=Math.min(tot.kcal/(t.kcal||1),1),left=Math.round(t.kcal-tot.kcal);
-  const bar=(k,c)=>`<div class="bar"><div class="lab"><b>${NM[k][0]}</b><span>${fmt(tot[k],k)} / ${fmt(t[k],k)} ${NM[k][1]}</span></div><div class="track"><div class="fill" style="width:${Math.min(100,tot[k]/(t[k]||1)*100)}%;background:${c}"></div></div></div>`;
+  const bar=(k,c)=>`<div class="bar" data-act="macro" data-k="${k}"><div class="lab"><b>${NM[k][0]} <span class="chev sm">›</span></b><span>${fmt(tot[k],k)} / ${fmt(t[k],k)} ${NM[k][1]}</span></div><div class="track"><div class="fill" style="width:${Math.min(100,tot[k]/(t[k]||1)*100)}%;background:${c}"></div></div></div>`;
   let h=`${RO?'':`<div class="banner" id="schbanner" data-act="review" hidden>${svg(I.clock,'')}<b></b><span>Review ›</span></div>`}<div class="datebar"><button data-act="day" data-d="-1" aria-label="Previous day">‹</button><b>${prettyDate(d)}</b><button data-act="day" data-d="1" aria-label="Next day">›</button></div>
   <div class="card"><div class="summary">
-    <div class="ringbox"><svg viewBox="0 0 120 120" class="ring"><circle cx="60" cy="60" r="${R}" class="ring-bg"/><circle cx="60" cy="60" r="${R}" class="ring-fg ${tot.kcal>t.kcal?'over':''}" stroke-dasharray="${C*p} ${C}" transform="rotate(-90 60 60)"/></svg>
+    <div class="ringbox" data-act="macro" data-k="kcal"><svg viewBox="0 0 120 120" class="ring"><circle cx="60" cy="60" r="${R}" class="ring-bg"/><circle cx="60" cy="60" r="${R}" class="ring-fg ${tot.kcal>t.kcal?'over':''}" stroke-dasharray="${C*p} ${C}" transform="rotate(-90 60 60)"/></svg>
     <div class="ringtxt"><b>${Math.round(tot.kcal)}</b><span>of ${t.kcal} kcal</span><span style="color:${left<0?'var(--bad)':'var(--mute)'}">${left<0?-left+' over':left+' left'}</span></div></div>
     <div class="bars">${bar('pro','var(--pro)')}${bar('carb','var(--carb)')}${bar('fat','var(--fat)')}${bar('fib','var(--fib)')}</div>
   </div><button class="linkbtn" data-act="dayMicro">Vitamins, minerals & more ›</button></div>`;
@@ -925,6 +933,24 @@ let WIDGET_SRC='';
 function loadWidgetSrc(){fetch('widget/TrackMyFood-Widget.js',{cache:'no-cache'}).then(r=>r.ok?r.text():'').then(t=>{if(t.includes('const PRESET = "";'))WIDGET_SRC=t}).catch(()=>{})}
 function widgetCode(){return WIDGET_SRC.replace('const PRESET = "";','const PRESET = "'+btoa(JSON.stringify({u:S.cfg.scriptUrl,t:S.cfg.token}))+'";')}
 
+/* ---------- nutrient breakdown: which meals and foods contributed ---------- */
+function openBreakdown(k){
+  const es=dayEntries(U.date),tot=sumN(es)[k]||0,tg=targets()[k]||0,u=NM[k][1];
+  const col=k==='pro'?'var(--pro)':k==='carb'?'var(--carb)':k==='fat'||k==='sfat'?'var(--fat)':k==='fib'?'var(--fib)':'var(--acc)';
+  const v=x=>`${fmt(x,k)} ${u}`,pct=x=>tot?Math.round(x/tot*100):0;
+  const row=(name,sub,x)=>`<div class="bd-row"><div class="bd-top"><span class="bd-n">${esc(name)}${sub?`<small>${esc(sub)}</small>`:''}</span><b>${v(x)}</b><span class="bd-p">${pct(x)}%</span></div><div class="track"><div class="fill" style="width:${tot?x/tot*100:0}%;background:${col}"></div></div></div>`;
+  const bySlot=SLOTS.map(([s,l])=>[l,es.filter(e=>e.slot===s).reduce((a,e)=>a+(+e.n[k]||0),0),es.filter(e=>e.slot===s).length]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  const byFood=es.map(e=>[e.name,slotName(e.slot)+' · '+qtyStr(e.qty,e.unit),+e.n[k]||0]).filter(x=>x[2]>0).sort((a,b)=>b[2]-a[2]);
+  const empty=SLOTS.filter(([s])=>!bySlot.some(x=>x[0]===slotName(s))).map(x=>x[1]);
+  openSheet(`<div class="sheet-h"><b>${NM[k][0]} · ${prettyDate(U.date)}</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div>
+    <div class="bd-head"><b style="color:${col}">${v(tot)}</b><span>${tg?`of ${v(tg)} ${LIMITS.has(k)?'limit':'target'} · ${Math.round(tot/tg*100)}%`:''}</span></div>
+    ${tot?`<div class="sec">By meal</div>${bySlot.map(x=>row(x[0],x[2]+' item'+(x[2]===1?'':'s'),x[1])).join('')}
+      ${empty.length?`<div class="hint">Nothing from ${empty.join(', ')}.</div>`:''}
+      <div class="sec">By food</div>${byFood.slice(0,20).map(x=>row(x[0],x[1],x[2])).join('')}${byFood.length>20?`<div class="hint">+${byFood.length-20} smaller items</div>`:''}`
+    :`<div class="empty">No ${NM[k][0].toLowerCase()} logged ${U.date===today()?'today':'on this day'} yet.</div>`}
+    <div class="chips" style="margin-top:14px">${['kcal','pro','carb','fat','fib'].filter(x=>x!==k).map(x=>`<button class="chip" data-act="macro" data-k="${x}" data-swap="1">${NM[x][0]}</button>`).join('')}</div>`);
+}
+
 /* ---------- profiles (admin) ---------- */
 async function openProfiles(){
   const sh=openSheet(`<div class="sheet-h"><b>Profiles</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div><div id="plist2"><div class="spinner"></div></div>
@@ -981,7 +1007,7 @@ const A={
     put('rule',{id:uid('r'),name:e.name,items:[it],slot:$('#qs',sh).value,time:nowTime().slice(0,2)+':00',days:[0,1,2,3,4,5,6],active:true,startDate:addDays(e.date,1),deleted:false});
     closeAll();render();toast('Added to your schedule')},
   editEntry:d=>{const e=S.entries[d.id];if(e)openItem({entry:e,mode:'edit',slot:e.slot,date:e.date})},
-  dayMicro:()=>{const n=sumN(dayEntries(U.date));openSheet(`<div class="sheet-h"><b>${prettyDate(U.date)} · nutrients</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div>${microTable(n,targets())}<div class="hint">Sugar, saturated fat and sodium are upper limits. Turning red means over.</div>`)},
+  dayMicro:()=>{const n=sumN(dayEntries(U.date));openSheet(`<div class="sheet-h"><b>${prettyDate(U.date)} · nutrients</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div>${microTable(n,targets(),true)}<div class="hint">Tap any nutrient to see which meals and foods it came from. Sugar, saturated fat and sodium are upper limits. Turning red means over.</div>`)},
   slotMenu:d=>{const me=dayEntries(U.date).filter(e=>e.slot===d.slot);openSheet(`<div class="sheet-h"><b>${slotName(d.slot)}</b><button class="iconbtn" data-act="close">${svg(I.x)}</button></div>${nutGrid(sumN(me))}${microTable(sumN(me))}
     <button class="btn" data-act="slotSave" data-slot="${d.slot}">Save as My Meal</button><button class="btn ghost" data-act="slotCopy" data-slot="${d.slot}">Copy to next day</button>`)},
   slotSave:d=>{const me=dayEntries(U.date).filter(e=>e.slot===d.slot);closeSheet();openComposer('meal',null);const sh=top();sh._o.st.items=me.map(e=>({name:e.name,foodId:e.foodId,qty:e.qty,unit:e.unit,grams:e.grams,p100:getP100(e)}));$('#cn',sh).value=slotName(d.slot)+' combo';$('#cs',sh).value=d.slot;sh._o.draw()},
@@ -1012,6 +1038,7 @@ const A={
     put(o.kind,rec);closeSheet();render();if(o.kind==='rule')checkSchedule(true);toast('Saved')},
   cdel:()=>{const o=top()._o;remove(o.kind,o.rec);closeSheet();render();toast('Deleted')},
   review:()=>checkSchedule(true),
+  macro:d=>{if(d.swap)closeSheet();openBreakdown(d.k)},
   logWeight:()=>openWeight(),
   saveWeight:()=>{const sh=top(),kg=+$('#wkg',sh).value,date=$('#wdate',sh).value||today();
     if(!(kg>20&&kg<350)){toast('Enter your weight in kg');return}
