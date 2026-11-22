@@ -78,10 +78,11 @@ nav.tabs svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2
 nav.tabs .fab{flex:none;width:56px;height:56px;margin-top:-22px;border-radius:50%;background:var(--acc);color:#1a0f06;box-shadow:0 6px 18px rgba(240,138,60,.35);justify-content:center}
 nav.tabs .fab svg{width:28px;height:28px}
 .overlay{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100%);background:rgba(0,0,0,.65);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
-.sheet{background:var(--card);width:100%;max-width:640px;max-height:calc(var(--vvh,100vh) - 12px);overflow:auto;overscroll-behavior:contain;border-radius:20px 20px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+.sheet{background:var(--card);width:100%;max-width:640px;max-height:calc(var(--vvh,100vh) - 12px - env(safe-area-inset-top));overflow:auto;overscroll-behavior:contain;border-radius:20px 20px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));animation:up .2s ease-out}
 @keyframes up{from{transform:translateY(30px);opacity:.6}}@keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.overlay{animation:none}}
-.sheet-h{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sheet-h{display:flex;align-items:center;gap:8px;margin:-14px -16px 12px;padding:14px 16px 10px;position:sticky;top:-14px;background:var(--card);z-index:3}
+.kb .sheet-h,.sheet.tall .sheet-h{margin-top:0;top:0;padding-top:0}
 .sheet-h b{flex:1;font-size:18px}
 .list .row{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list .row .nm{flex:1}.list .row small{display:block;color:var(--mute);font-size:12.5px}
@@ -147,7 +148,7 @@ header.top .iconbtn{background:var(--card)}
 .mealacts button{min-width:0}
 .overlay.top{align-items:flex-start}
 .kb .overlay{align-items:flex-start}
-.kb .sheet{border-radius:0 0 20px 20px;max-height:var(--vvh,100vh)}
+.kb .sheet{border-radius:0 0 20px 20px;max-height:var(--vvh,100vh);padding-top:calc(10px + env(safe-area-inset-top))}
 .sheet.tall{height:var(--vvh,100vh);max-height:none;display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;border-radius:0;padding-top:calc(12px + env(safe-area-inset-top));animation:fade .15s}
 .sheet.tall .sheet-h,.sheet.tall>input,.sheet.tall>.mealacts{flex:none}
 .sheet.tall #res{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:8px -16px 0;padding:0 16px calc(18px + env(safe-area-inset-bottom))}
@@ -237,7 +238,7 @@ function searchFoods(q){
 }
 
 /* ---------- state ---------- */
-const APP_VERSION='11';
+const APP_VERSION='12';
 const KEY='tmf_v1';
 const defCfg={scriptUrl:'',token:'',aiMode:'script',apiKey:'',model:'claude-sonnet-5-5'};
 function defaultState(){return{entries:{},meals:{},rules:{},foods:{},settings:{id:'settings',targets:{...DEF_T},updatedAt:0},queue:[],cfg:{...defCfg},lastSync:0}}
@@ -462,7 +463,9 @@ Units: kcal; pro/carb/fat/fib/sug/sfat in g; na/k/ca/fe/vc in mg; va in mcg RAE.
 (function(){
   const vv=window.visualViewport;if(!vv)return;
   const set=()=>{const r=document.documentElement;r.style.setProperty('--vvh',vv.height+'px');r.style.setProperty('--vvt',vv.offsetTop+'px');
-    r.classList.toggle('kb',window.innerHeight-vv.height>120)};
+    const a=document.activeElement,typing=a&&a.matches&&a.matches('input:not([type=file]):not([type=checkbox]),textarea');
+    r.classList.toggle('kb',!!typing&&window.innerHeight-vv.height>120)};
+  document.addEventListener('focusout',()=>setTimeout(set,50));
   vv.addEventListener('resize',set);vv.addEventListener('scroll',set);set();
   window.addEventListener('scroll',()=>{if(stack.length&&window.scrollY!==0)window.scrollTo(0,0)},{passive:true});
   document.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select')&&e.target.closest('.sheet'))setTimeout(()=>e.target.scrollIntoView({block:'nearest'}),250)});
