@@ -77,8 +77,8 @@ nav.tabs button.on{color:var(--acc)}
 nav.tabs svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs .fab{flex:none;width:56px;height:56px;margin-top:-22px;border-radius:50%;background:var(--acc);color:#1a0f06;box-shadow:0 6px 18px rgba(240,138,60,.35);justify-content:center}
 nav.tabs .fab svg{width:28px;height:28px}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
-.sheet{background:var(--card);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+.overlay{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100%);background:rgba(0,0,0,.65);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
+.sheet{background:var(--card);width:100%;max-width:640px;max-height:calc(var(--vvh,100vh) - 12px);overflow:auto;overscroll-behavior:contain;border-radius:20px 20px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));animation:up .2s ease-out}
 @keyframes up{from{transform:translateY(30px);opacity:.6}}@keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.overlay{animation:none}}
 .sheet-h{display:flex;align-items:center;gap:8px;margin-bottom:12px}
@@ -145,6 +145,10 @@ nav.tabs button{position:relative}
 header.top .iconbtn{background:var(--card)}
 .airow .nm{color:var(--acc)}.airow svg.sp{width:16px;height:16px;stroke:var(--acc);fill:none;stroke-width:2;vertical-align:-3px;margin-right:4px}
 .mealacts button{min-width:0}
+.sheet.tall{height:calc(var(--vvh,100vh) - 12px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.sheet.tall .sheet-h,.sheet.tall>input,.sheet.tall>.mealacts{flex:none}
+.sheet.tall #res{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:8px -16px 0;padding:0 16px calc(18px + env(safe-area-inset-bottom))}
+.kb .sheet{padding-bottom:12px}.kb .sheet.tall #res{padding-bottom:12px}
 .who{font-size:12px;color:var(--mute);margin-right:4px;white-space:nowrap}
 .viewbar{display:flex;align-items:center;gap:10px;background:#1c2740;border:1px solid #2d3e63;border-radius:var(--r);padding:10px 12px;margin:12px 0 10px}
 .viewbar>svg{width:22px;height:22px;stroke:var(--pro);fill:none;stroke-width:2;flex:none}
@@ -209,6 +213,14 @@ const customFoods=()=>Object.values(S.foods).filter(f=>!f.deleted).map(f=>({id:f
 const allFoods=()=>customFoods().concat(FOODS);
 const foodById=id=>id&&allFoods().find(f=>f.id===id);
 const foodByName=nm=>{if(!nm)return null;const s=nm.toLowerCase().trim();return allFoods().find(f=>f.name.toLowerCase()===s)};
+function searchMeals(q){
+  const words=q.toLowerCase().trim().split(/\s+/).filter(Boolean);if(!words.length)return[];
+  return Object.values(S.meals).filter(m=>!m.deleted).map(m=>{
+    const nm=m.name.toLowerCase(),hay=nm+' '+m.items.map(i=>i.name.toLowerCase()).join(' ');
+    if(!words.every(w=>hay.includes(w)))return null;
+    return[nm.startsWith(words.join(' '))?0:nm.includes(words[0])?1:2,m];
+  }).filter(Boolean).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+}
 function searchFoods(q){
   q=q.toLowerCase().trim();if(!q)return[];
   const words=q.split(/\s+/);
@@ -442,11 +454,20 @@ Reply with ONLY JSON, no markdown:
 Units: kcal; pro/carb/fat/fib/sug/sfat in g; na/k/ca/fe/vc in mg; va in mcg RAE.`;
 }
 
+/* ---------- keyboard-aware layout: keep sheets inside the visible area when the iOS keyboard is up ---------- */
+(function(){
+  const vv=window.visualViewport;if(!vv)return;
+  const set=()=>{const r=document.documentElement;r.style.setProperty('--vvh',vv.height+'px');r.style.setProperty('--vvt',vv.offsetTop+'px');
+    r.classList.toggle('kb',window.innerHeight-vv.height>120)};
+  vv.addEventListener('resize',set);vv.addEventListener('scroll',set);set();
+  document.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select')&&e.target.closest('.sheet'))setTimeout(()=>e.target.scrollIntoView({block:'nearest'}),250)});
+})();
+
 /* ---------- sheets (modals) ---------- */
 const stack=[];
 function openSheet(html,opts){
   const ov=document.createElement('div');ov.className='overlay';
-  ov.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  ov.innerHTML=`<div class="sheet${opts&&opts.tall?' tall':''}" role="dialog" aria-modal="true">${html}</div>`;
   ov.addEventListener('click',e=>{if(e.target===ov)closeSheet()});
   document.body.appendChild(ov);const sh=$('.sheet',ov);sh._o=opts||{};stack.push(ov);return sh;
 }
@@ -501,19 +522,25 @@ function openSearch(opts){
     <div class="sheet-h"><b>${pick?'Add an item':'Add to '+slotName(opts.slot)}</b><button class="iconbtn" data-act="close" aria-label="Close">${svg(I.x)}</button></div>
     <input id="q" type="search" placeholder="Search idli, dal, chai, biryani…" autocomplete="off">
     ${!pick?`<div class="mealacts"><button data-act="photo" data-src="cam">${svg(I.cam)} Snap</button><button data-act="photo" data-src="up">${svg(I.img)} Upload</button></div>`:''}
-    <div id="res" class="list"></div>
-    <button class="btn ghost" data-act="newFood">${svg(I.plus)} Create a custom food</button>`,opts);
+    <div id="res" class="list"></div>`,{...opts,tall:true});
   const q=$('#q',sh),res=$('#res',sh);
   const row=f=>{const u=f.units[0];return `<div class="row" data-act="pickFood" data-id="${esc(f.id)}"><div class="nm">${esc(f.name)}${f.custom?'<span class="badge">mine</span>':''}<small>${esc(u[0])} · ${Math.round(f.n.kcal*u[1]/100)} kcal · P ${r1(f.n.pro*u[1]/100)}g</small></div></div>`};
+  const mealRow=m=>`<div class="row" data-act="logMeal" data-id="${m.id}"><div class="nm">${esc(m.name)}<span class="badge">meal</span><small>${m.items.length===1?esc(qtyStr(m.items[0].qty,m.items[0].unit)):m.items.length+' items'} · ${Math.round(sumN(m.items.map(i=>({n:scaleN(i.p100,i.grams)}))).kcal)} kcal</small></div></div>`;
+  const createRow=`<button class="btn ghost" data-act="newFood" style="margin:12px 0">${svg(I.plus)} Create a custom food</button>`;
   const draw=()=>{
     const v=q.value.trim();
     const aiRow=v&&!pick?`<div class="row airow" data-act="aiDescribe" data-q="${esc(v)}" data-close="1"><div class="nm">${svg(I.spark,'sp')} Ask AI: “${esc(v)}”<small>Works out the quantity and nutrients, e.g. “2 dosa with chutney”</small></div></div>`:'';
-    if(v){const r=searchFoods(v);res.innerHTML=aiRow+(r.length?r.map(row).join(''):`<div class="empty">No match for “${esc(v)}”. Create it as a custom food, or ask AI above.</div>`);return}
+    if(v){const r=searchFoods(v),ms=pick?[]:searchMeals(v);
+      res.innerHTML=(ms.length?`<div class="sec">My meals</div>`+ms.map(mealRow).join(''):'')
+        +aiRow
+        +(r.length?(ms.length?`<div class="sec">Foods</div>`:'')+r.map(row).join(''):(ms.length?'':`<div class="empty">No match for “${esc(v)}”. Ask AI above, or create a custom food.</div>`))
+        +createRow;
+      res.scrollTop=0;return}
     const seen=new Set(),rec=[];
     Object.values(S.entries).filter(e=>!e.deleted&&e.foodId).sort((a,b)=>b.updatedAt-a.updatedAt).forEach(e=>{if(seen.has(e.foodId)||rec.length>=10)return;const f=foodById(e.foodId);if(f){seen.add(e.foodId);rec.push(f)}});
     const meals=pick?[]:Object.values(S.meals).filter(m=>!m.deleted);
     const cats=[...new Set(FOODS.map(f=>f.cat))];
-    res.innerHTML=(meals.length?`<div class="sec">My meals</div>`+meals.map(m=>`<div class="row" data-act="logMeal" data-id="${m.id}"><div class="nm">${esc(m.name)}<small>${m.items.length} items · ${Math.round(sumN(m.items.map(i=>({n:scaleN(i.p100,i.grams)}))).kcal)} kcal</small></div></div>`).join(''):'')
+    res.innerHTML=createRow+(meals.length?`<div class="sec">My meals</div>`+meals.map(mealRow).join(''):'')
       +(rec.length?`<div class="sec">Recent</div>`+rec.map(row).join(''):'')
       +customFoods().map(row).join('')
       +cats.map(c=>`<div class="sec">${esc(c)}</div>`+FOODS.filter(f=>f.cat===c).map(row).join('')).join('');
