@@ -145,7 +145,10 @@ nav.tabs button{position:relative}
 header.top .iconbtn{background:var(--card)}
 .airow .nm{color:var(--acc)}.airow svg.sp{width:16px;height:16px;stroke:var(--acc);fill:none;stroke-width:2;vertical-align:-3px;margin-right:4px}
 .mealacts button{min-width:0}
-.sheet.tall{height:calc(var(--vvh,100vh) - 12px);display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.overlay.top{align-items:flex-start}
+.kb .overlay{align-items:flex-start}
+.kb .sheet{border-radius:0 0 20px 20px;max-height:var(--vvh,100vh)}
+.sheet.tall{height:var(--vvh,100vh);max-height:none;display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;border-radius:0;padding-top:calc(12px + env(safe-area-inset-top));animation:fade .15s}
 .sheet.tall .sheet-h,.sheet.tall>input,.sheet.tall>.mealacts{flex:none}
 .sheet.tall #res{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:8px -16px 0;padding:0 16px calc(18px + env(safe-area-inset-bottom))}
 .kb .sheet{padding-bottom:12px}.kb .sheet.tall #res{padding-bottom:12px}
@@ -234,6 +237,7 @@ function searchFoods(q){
 }
 
 /* ---------- state ---------- */
+const APP_VERSION='11';
 const KEY='tmf_v1';
 const defCfg={scriptUrl:'',token:'',aiMode:'script',apiKey:'',model:'claude-sonnet-5-5'};
 function defaultState(){return{entries:{},meals:{},rules:{},foods:{},settings:{id:'settings',targets:{...DEF_T},updatedAt:0},queue:[],cfg:{...defCfg},lastSync:0}}
@@ -460,18 +464,26 @@ Units: kcal; pro/carb/fat/fib/sug/sfat in g; na/k/ca/fe/vc in mg; va in mcg RAE.
   const set=()=>{const r=document.documentElement;r.style.setProperty('--vvh',vv.height+'px');r.style.setProperty('--vvt',vv.offsetTop+'px');
     r.classList.toggle('kb',window.innerHeight-vv.height>120)};
   vv.addEventListener('resize',set);vv.addEventListener('scroll',set);set();
+  window.addEventListener('scroll',()=>{if(stack.length&&window.scrollY!==0)window.scrollTo(0,0)},{passive:true});
   document.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select')&&e.target.closest('.sheet'))setTimeout(()=>e.target.scrollIntoView({block:'nearest'}),250)});
 })();
 
 /* ---------- sheets (modals) ---------- */
 const stack=[];
 function openSheet(html,opts){
-  const ov=document.createElement('div');ov.className='overlay';
+  const ov=document.createElement('div');ov.className='overlay'+(opts&&opts.tall?' top':'');
+  if(!stack.length)lockBody(true);
   ov.innerHTML=`<div class="sheet${opts&&opts.tall?' tall':''}" role="dialog" aria-modal="true">${html}</div>`;
   ov.addEventListener('click',e=>{if(e.target===ov)closeSheet()});
   document.body.appendChild(ov);const sh=$('.sheet',ov);sh._o=opts||{};stack.push(ov);return sh;
 }
-function closeSheet(n=1){while(n-->0&&stack.length)stack.pop().remove()}
+function closeSheet(n=1){while(n-->0&&stack.length)stack.pop().remove();if(!stack.length)lockBody(false)}
+let lockedY=0;
+function lockBody(on){
+  const b=document.body;
+  if(on){lockedY=window.scrollY;b.style.position='fixed';b.style.top=-lockedY+'px';b.style.left='0';b.style.right='0';b.style.overflow='hidden'}
+  else if(b.style.position==='fixed'){b.style.position='';b.style.top='';b.style.left='';b.style.right='';b.style.overflow='';window.scrollTo(0,lockedY)}
+}
 function closeAll(){closeSheet(stack.length)}
 const top=()=>stack.length?$('.sheet',stack[stack.length-1]):null;
 let toastT;function toast(m){let t=$('.toast');if(!t){t=document.createElement('div');t.className='toast';document.body.appendChild(t)}t.textContent=m;clearTimeout(toastT);toastT=setTimeout(()=>t.remove(),2600)}
@@ -758,6 +770,7 @@ function viewSettings(){
   ${c.aiMode==='direct'?`<label class="f">Claude API key</label><input data-cfg="apiKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-…"><div class="hint">Stored only in this browser.</div><label class="f">Claude model</label><input data-cfg="model" value="${esc(c.model)}">`:`<div class="hint">Uses the GEMINI_API_KEY saved in your Apps Script settings. The key never touches this phone.</div>`}</div>
   <div class="card"><b>Your data</b><div class="grid2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Import backup</button></div>
   <button class="btn danger" data-act="wipe">Erase data on this device</button></div>
+  <div class="hint" style="text-align:center">App version ${APP_VERSION}</div>
   <div class="hint" style="text-align:center;margin-bottom:20px">Nutrition values are estimates. Check labels for packaged foods.</div>`;
 }
 
