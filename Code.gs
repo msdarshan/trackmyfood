@@ -343,12 +343,12 @@ var GEMINI_MODELS = ['gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-3.1
 
 function vision_(req) {
   var props = PropertiesService.getScriptProperties();
-  if (!req.image || !req.prompt) return {ok: false, error: 'Bad request'};
+  if (!req.prompt) return {ok: false, error: 'Bad request'};
   var gkey = props.getProperty('GEMINI_API_KEY');
   if (gkey) return gemini_(gkey, req, props.getProperty('GEMINI_MODEL'));
   if (props.getProperty('ANTHROPIC_API_KEY')) {
-    var r = claude_({model: req.claudeModel || 'claude-sonnet-5-5', max_tokens: 2000, messages: [{role: 'user', content: [
-      {type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: req.image}}, {type: 'text', text: req.prompt}]}]});
+    var content = (req.image ? [{type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: req.image}}] : []).concat([{type: 'text', text: req.prompt}]);
+    var r = claude_({model: req.claudeModel || 'claude-sonnet-5-5', max_tokens: 2500, messages: [{role: 'user', content: content}]});
     if (!r.ok) return r;
     return {ok: true, text: (r.data.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(''), provider: 'claude'};
   }
@@ -364,7 +364,7 @@ function gemini_(key, req, override) {
       contentType: 'application/json',
       headers: {'x-goog-api-key': key},
       payload: JSON.stringify({
-        contents: [{role: 'user', parts: [{inline_data: {mime_type: 'image/jpeg', data: req.image}}, {text: req.prompt}]}],
+        contents: [{role: 'user', parts: (req.image ? [{inline_data: {mime_type: 'image/jpeg', data: req.image}}] : []).concat([{text: req.prompt}])}],
         generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}
       }),
       muteHttpExceptions: true

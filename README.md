@@ -74,3 +74,10 @@ A PWA can't provide native widgets, so the widget runs in the free **Scriptable*
 - Data comes from the backend's `summary` action: today's totals, targets and the last 7 days for the calling profile.
 - iOS refreshes widgets on its own schedule (about every 15 minutes or more). The last result is cached for offline use.
 - Source: `widget/TrackMyFood-Widget.js`. A plain copy has an empty `PRESET`, so it asks for your setup link the first time it runs.
+
+## AI text entry
+- **Describe with AI** (+ button, the ✨ AI button on each meal, or "Ask AI" in search): type what you ate, e.g. "2 dosa with chutney". The AI works out quantities, grams and nutrients, and matches the built-in database where it can.
+- **Create meal with AI** (My meals): list a recipe's ingredients, e.g. "Overnight oats: 50 g oats, 150 ml milk, 1 tbsp chia, 1 banana, 1 tsp honey". You then choose any of: save to My Meals, save as one custom food with a serving size (e.g. 1 jar), or treat it as one dish instead of separate ingredients.
+- **Custom food**: type a name such as "Whole Truth whey", then tap **Fill nutrition with AI**. It fills the serving size and all 13 nutrients so you can check them against the label.
+- In the manual meal builder, **Add with AI** appends parsed ingredients.
+- Everything uses the same `vision` backend action, text-only when there's no photo.
