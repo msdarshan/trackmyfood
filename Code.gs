@@ -17,11 +17,13 @@
 var NK = ['kcal','pro','carb','fat','fib','sug','sfat','na','k','ca','fe','vc','va'];
 var NUT_HEAD = ['kcal','protein_g','carbs_g','fat_g','fibre_g','sugar_g','satfat_g','sodium_mg','potassium_mg','calcium_mg','iron_mg','vitc_mg','vita_mcg'];
 var SLOT_LABEL = {breakfast:'Breakfast', msnack:'Morning snack', lunch:'Lunch', esnack:'Evening snack', dinner:'Dinner'};
-var LOG_HEAD = ['id','date','meal','name','qty','unit','grams'].concat(NUT_HEAD).concat(['source','food_id','rule_id','deleted','updated_at','slot_key','user_id']);
+var EXTRA_NK = ['vd','b12'];
+var EXTRA_HEAD = ['vitd_mcg','b12_mcg'];
+var LOG_HEAD = ['id','date','meal','name','qty','unit','grams'].concat(NUT_HEAD).concat(['source','food_id','rule_id','deleted','updated_at','slot_key','user_id']).concat(EXTRA_HEAD);
 var GENERIC_HEAD = ['id','name','updated_at','deleted','json','user_id'];
 var SHEETS = {
   Log: LOG_HEAD,
-  Daily: ['date'].concat(NUT_HEAD).concat(['items','user_id']),
+  Daily: ['date'].concat(NUT_HEAD).concat(['items','user_id']).concat(EXTRA_HEAD),
   MyMeals: GENERIC_HEAD,
   Recurring: GENERIC_HEAD,
   CustomFoods: GENERIC_HEAD,
@@ -31,7 +33,8 @@ var SHEETS = {
 var KIND_SHEET = {meal:'MyMeals', rule:'Recurring', food:'CustomFoods', settings:'Settings'};
 var ADMIN_ID = 'admin';
 var LOG_USER = LOG_HEAD.indexOf('user_id');
-var DAILY_USER = SHEETS.Daily.length - 1;
+var DAILY_USER = SHEETS.Daily.indexOf('user_id');
+var LOG_EXTRA = LOG_HEAD.indexOf('vitd_mcg');
 var GEN_USER = GENERIC_HEAD.indexOf('user_id');
 // Used when the script is not bound to the sheet.
 var DEFAULT_SHEET_ID = '';
@@ -203,7 +206,8 @@ function push_(ops, me) {
         var n = r.n || {};
         return ['' + r.id, '' + r.date, SLOT_LABEL[r.slot] || r.slot, r.name, round_(r.qty), r.unit, round_(r.grams)]
           .concat(NK.map(function (k) { return round_(n[k]); }))
-          .concat([r.src || '', r.foodId || '', r.ruleId || '', !!r.deleted, r.updatedAt || Date.now(), r.slot, uid]);
+          .concat([r.src || '', r.foodId || '', r.ruleId || '', !!r.deleted, r.updatedAt || Date.now(), r.slot, uid])
+          .concat(EXTRA_NK.map(function (k) { return round_(n[k]); }));
       }), 0, LOG_USER);
     }
     Object.keys(KIND_SHEET).forEach(function (kind) {
@@ -248,15 +252,16 @@ function daily_(dates, uid) {
   var vals = log.getRange(2, 1, last - 1, LOG_HEAD.length).getValues();
   var delCol = LOG_HEAD.indexOf('deleted');
   var want = {};
-  dates.forEach(function (d) { want[d] = {n: NK.map(function () { return 0; }), c: 0}; });
+  dates.forEach(function (d) { want[d] = {n: NK.map(function () { return 0; }), x: EXTRA_NK.map(function () { return 0; }), c: 0}; });
   vals.forEach(function (r) {
     var d = ymd_(r[1]);
     if (!want[d] || uidOf_(r[LOG_USER]) !== uid || isTrue_(r[delCol])) return;
     for (var i = 0; i < NK.length; i++) want[d].n[i] += +r[7 + i] || 0;
+    for (var j = 0; j < EXTRA_NK.length; j++) want[d].x[j] += +r[LOG_EXTRA + j] || 0;
     want[d].c++;
   });
   var dsh = sheet_('Daily');
-  var rows = dates.map(function (d) { return [d].concat(want[d].n.map(round_)).concat([want[d].c, uid]); });
+  var rows = dates.map(function (d) { return [d].concat(want[d].n.map(round_)).concat([want[d].c, uid]).concat(want[d].x.map(round_)); });
   upsert_(dsh, rows, 0, DAILY_USER);
   if (dsh.getLastRow() > 2) dsh.getRange(2, 1, dsh.getLastRow() - 1, SHEETS.Daily.length).sort([{column: DAILY_USER + 1, ascending: true}, {column: 1, ascending: true}]);
 }
@@ -271,6 +276,7 @@ function pull_(from, uid) {
       if (!r[0] || d < from || uidOf_(r[LOG_USER]) !== uid) return;
       var n = {};
       NK.forEach(function (k, i) { n[k] = +r[7 + i] || 0; });
+      EXTRA_NK.forEach(function (k, i) { n[k] = +r[LOG_EXTRA + i] || 0; });
       entries.push({
         id: String(r[0]), date: d, slot: r[LOG_HEAD.indexOf('slot_key')] || 'lunch', name: r[3],
         qty: +r[4], unit: r[5], grams: +r[6], n: n,
