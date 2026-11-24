@@ -271,7 +271,7 @@ function searchFoods(q){
 }
 
 /* ---------- state ---------- */
-const APP_VERSION='17';
+const APP_VERSION='18';
 const KEY='tmf_v1';
 const defCfg={scriptUrl:'',token:'',aiMode:'script',apiKey:'',model:'claude-sonnet-5-5'};
 function defaultState(){return{entries:{},meals:{},rules:{},foods:{},weights:{},settings:{id:'settings',targets:{...DEF_T},updatedAt:0},queue:[],cfg:{...defCfg},lastSync:0}}
@@ -1052,7 +1052,7 @@ const A={
   review:()=>checkSchedule(true),
   aiTest:async()=>{const box=$('#aitest'),b=$('[data-act=aiTest]');if(!box)return;b.disabled=true;box.innerHTML='<div class="spinner"></div><div class="hint" style="text-align:center">Asking each provider… this can take up to a minute</div>';
     try{const j=await api({action:'aiTest'});
-      box.innerHTML=`<table class="micro" style="margin-top:10px">${j.results.map(r=>`<tr><td><b>${esc(AI_NAMES[r.provider]||r.provider)}</b>${r.model?`<br><small style="color:var(--mute)">${esc(r.model)}</small>`:''}</td><td style="text-align:right">${!r.configured?'<span class="badge">no key</span>':r.ok?`<span class="badge ok">working · ${(r.ms/1000).toFixed(1)}s</span>`:'<span class="badge low">failing</span>'}</td></tr>${r.configured&&!r.ok?`<tr><td colspan="2"><small style="color:var(--mute)">${esc(r.error)}</small></td></tr>`:''}`).join('')}</table>
+      box.innerHTML=`<table class="micro" style="margin-top:10px">${j.results.map(r=>`<tr><td><b>${esc(AI_NAMES[r.provider]||r.provider)}</b>${r.model?`<br><small style="color:var(--mute)">${esc(r.model)}</small>`:''}</td><td style="text-align:right">${!r.configured?'<span class="badge">no key</span>':r.ok&&r.vision!==false?`<span class="badge ok">reads photos · ${(r.ms/1000).toFixed(1)}s</span>`:r.ok?'<span class="badge">text only</span>':'<span class="badge low">failing</span>'}</td></tr>${r.configured&&r.error?`<tr><td colspan="2"><small style="color:var(--mute)">${esc(r.error)}</small></td></tr>`:''}`).join('')}</table>
         <div class="hint">Order in use: ${esc((j.chain||[]).map(p=>AI_NAMES[p]||p).join(' → ')||'none')}</div>`}
     catch(e){box.innerHTML=`<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`}
     b.disabled=false},

@@ -463,13 +463,16 @@ function geminiModels_(key) {
   return list.slice(0, 8);
 }
 
-/* Admin: try every configured provider with a tiny request and report what works. */
+/* Admin: try every configured provider with a tiny photo and report what works. */
+var TEST_JPEG = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABgAGADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD2aiiigAooooAKKKKACiiigAooooAKKKKACiiigApGYKpZiAAMkntQzBVLMQABkk9q5zVNUN2xhhJEAP4v7/SuPF4uGGhzS36I1pUnUdkX7rXYYiyQIZXBxuP3fr71nSa3fO2VdYxjoqj+uaz6K+Yq5jiaj+K3poelHD049C+mtXyuGMquB/CyDB/Kr1t4gRgFuYypz95OR+X/AOusKippZhiabupX9dQlQpy6HaI6SIHjZXU9CpyDTq5bTtRexkwctEx+Zf6j3rpopUmjWSNgyMMgivp8HjYYmOmklujzq1F035D6KKK7jEKKKKAMrXboxW6wI5DyH5sf3f8A6/8AQ1z1aGtyF9SdSBiNQox9M/1rPr4zMarqYmXlp9x69CPLTQUUUVwG4UUUUAFbWgXR3Pau5xjdGD29R/n3rFqzpshi1GBlAyXC8+/H9a6sFVdKvGS7/gzKtHmg0dbRRRX3B4wUUUUAcxrSMupyFhgOAV9xjH9DVCt3xBbBo0uVByp2Ngdu36/zrCr4rMKTp4mSfXX7z16EuamgoooriNwooooAKsaejSahAFGSJAfwHJ/lVetfQLYPO9wwOIxheO56/p/OunCUnVrxiu5lVlywbN+iiivuTxgooooAa6LJG0bjKsCCPUVzGo6c9jJkZaJj8rf0PvXU0yWJJo2jkUMjDBBrhxuDjiYW2ktmbUazpvyOMorautAOWe1kBGciNu3tms6TTb2JtrW0hOM/KN38q+Vq4KvSdpRf5o9ONaEtmVqKsJp95I4UW0oJ/vLgfmav22gSuA1xIIxn7q8n8+g/WlSwleq7RiwlVhHdlCyspb6by4+FH3nPRRXU28CW0Cwx52qOMnmiC3ito/LhQIuc4FS19RgcDHDRu9ZPd/ojza1Z1H5BRRRXomAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//9k=';
 function aiTest_() {
   var props = PropertiesService.getScriptProperties(), out = [];
   AI_ORDER.forEach(function (p) {
     if (!props.getProperty(AI_KEYS[p])) { out.push({provider: p, configured: false}); return; }
-    var t0 = Date.now(), r = callProvider_(p, {prompt: 'Reply with only this JSON: {"ok":true}'}, Date.now());
-    out.push({provider: p, configured: true, ok: !!r.ok, model: r.model || '', ms: Date.now() - t0, error: r.ok ? '' : ((r.tried || []).map(function (t) { return t.model + ': ' + t.error; }).join(' | ') || 'failed')});
+    var t0 = Date.now(), r = callProvider_(p, {prompt: 'What colour is the circle in this image? Reply with only this JSON: {"colour":"<one word>"}', image: TEST_JPEG}, Date.now());
+    var sawImage = r.ok && /yellow|gold|orange|amber/i.test(r.text || '');
+    out.push({provider: p, configured: true, ok: !!r.ok, vision: sawImage, model: r.model || '', ms: Date.now() - t0,
+      error: r.ok ? (sawImage ? '' : 'answered, but did not read the test photo correctly: ' + String(r.text).slice(0, 80)) : ((r.tried || []).map(function (t) { return t.model + ': ' + t.error; }).join(' | ') || 'failed')});
   });
   return {ok: true, chain: aiChain_(), results: out, geminiModels: props.getProperty('GEMINI_API_KEY') ? geminiModels_(props.getProperty('GEMINI_API_KEY')) : []};
 }
