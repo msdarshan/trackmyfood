@@ -5,9 +5,12 @@
  * Script properties (Project Settings > Script properties):
  *   APP_TOKEN          main admin token (created by setup())
  *   ADMIN_NAME         optional: display name of the main admin
- *   GEMINI_API_KEY     Google AI Studio key (free tier) used for photo recognition
- *   GEMINI_MODEL       optional: override the Gemini model id
- *   ANTHROPIC_API_KEY  optional: Claude API key, used only if GEMINI_API_KEY is not set
+ *   GEMINI_API_KEY     Google AI Studio key (free tier), first choice for photo/text AI
+ *   GROQ_API_KEY       optional fallback (free tier at console.groq.com)
+ *   OPENROUTER_API_KEY optional fallback (free models at openrouter.ai)
+ *   ANTHROPIC_API_KEY  optional fallback (paid Claude API)
+ *   AI_CHAIN           optional order, e.g. gemini,groq,openrouter,claude
+ *   GEMINI_MODEL / GROQ_MODEL / OPENROUTER_MODEL / CLAUDE_MODEL  optional: model to try first
  *   SHEET_ID           optional: spreadsheet id when the script is not bound to a sheet
  *
  * Every data row carries a user_id. Rows without one belong to the main admin ("admin").
@@ -99,6 +102,7 @@ function doPost(e) {
       case 'summary': return out_(summary_(req, me));
       case 'vision': return out_(vision_(req));
       case 'claude': return out_(claude_(req.body));
+      case 'aiTest': return out_(isAdmin ? aiTest_() : denied_());
       case 'users': return out_(isAdmin ? {ok: true, users: listUsers_()} : denied_());
       case 'userCreate': return out_(isAdmin ? createUser_(req) : denied_());
       case 'userUpdate': return out_(isAdmin ? updateUser_(req, me) : denied_());
@@ -345,59 +349,130 @@ function claude_(body) {
   return {ok: true, data: j};
 }
 
-/* ---------- Photo recognition: Gemini (free tier) first, Claude as fallback ---------- */
-var GEMINI_MODELS = ['gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+/* ---------- AI router: Gemini -> Groq -> OpenRouter -> Claude, with retries ---------- */
+// Script properties: GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY (any subset).
+// Optional: AI_CHAIN (e.g. "gemini,groq,openrouter,claude"), GEMINI_MODEL, GROQ_MODEL, OPENROUTER_MODEL, CLAUDE_MODEL.
+var AI_ORDER = ['gemini', 'groq', 'openrouter', 'claude'];
+var AI_KEYS = {gemini: 'GEMINI_API_KEY', groq: 'GROQ_API_KEY', openrouter: 'OPENROUTER_API_KEY', claude: 'ANTHROPIC_API_KEY'};
+var GROQ_MODELS = ['qwen/qwen3.8-27b', 'meta-models/muse-spark-open', 'qwen/qwen3.6-27b'];
+var OPENROUTER_MODELS = ['openrouter/free'];
+var CLAUDE_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'];
+var BUSY_CODES = {429: 1, 500: 1, 502: 1, 503: 1, 504: 1};
+
+function aiChain_() {
+  var props = PropertiesService.getScriptProperties();
+  var order = (props.getProperty('AI_CHAIN') || AI_ORDER.join(',')).split(',').map(function (x) { return x.trim().toLowerCase(); });
+  return order.filter(function (p) { return AI_KEYS[p] && props.getProperty(AI_KEYS[p]); });
+}
 
 function vision_(req) {
-  var props = PropertiesService.getScriptProperties();
   if (!req.prompt) return {ok: false, error: 'Bad request'};
-  var gkey = props.getProperty('GEMINI_API_KEY');
-  if (gkey) return gemini_(gkey, req, props.getProperty('GEMINI_MODEL'));
-  if (props.getProperty('ANTHROPIC_API_KEY')) {
-    var content = (req.image ? [{type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: req.image}}] : []).concat([{type: 'text', text: req.prompt}]);
-    var r = claude_({model: req.claudeModel || 'claude-sonnet-5-5', max_tokens: 2500, messages: [{role: 'user', content: content}]});
-    if (!r.ok) return r;
-    return {ok: true, text: (r.data.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(''), provider: 'claude'};
+  var chain = aiChain_();
+  if (!chain.length) return {ok: false, error: 'No AI key set. Add GEMINI_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY) in Apps Script > Project Settings > Script properties.'};
+  var tried = [], started = Date.now();
+  for (var i = 0; i < chain.length; i++) {
+    if (Date.now() - started > 100000) break; // stay well inside the 6-minute limit and the phone's patience
+    var r = callProvider_(chain[i], req, started);
+    tried = tried.concat(r.tried || []);
+    if (r.ok) { r.tried = tried; return r; }
   }
-  return {ok: false, error: 'No AI key set. Add GEMINI_API_KEY in Apps Script > Project Settings > Script properties.'};
+  var busy = tried.some(function (t) { return BUSY_CODES[t.code]; });
+  return {ok: false, tried: tried, error: (busy ? 'All AI models are busy right now. ' : 'AI request failed. ') + tried.map(function (t) { return t.provider + ' ' + t.model + ': ' + t.error; }).slice(-4).join(' | ')};
 }
 
-function gemini_(key, req, override) {
-  var models = (override ? [override] : []).concat(GEMINI_MODELS);
-  var lastErr = '';
-  for (var i = 0; i < models.length; i++) {
-    var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[i]) + ':generateContent', {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {'x-goog-api-key': key},
-      payload: JSON.stringify({
-        contents: [{role: 'user', parts: (req.image ? [{inline_data: {mime_type: 'image/jpeg', data: req.image}}] : []).concat([{text: req.prompt}])}],
-        generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}
-      }),
-      muteHttpExceptions: true
-    });
-    var code = res.getResponseCode(), j = {};
-    try { j = JSON.parse(res.getContentText()); } catch (e) {}
-    if (code < 300) {
-      var parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
-      var text = parts.map(function (p) { return p.text || ''; }).join('');
-      if (text) return {ok: true, text: text, provider: 'gemini', model: models[i]};
-      lastErr = 'Gemini returned no text' + (j.promptFeedback && j.promptFeedback.blockReason ? ' (' + j.promptFeedback.blockReason + ')' : '');
-      continue;
+function callProvider_(provider, req, started) {
+  var props = PropertiesService.getScriptProperties(), key = props.getProperty(AI_KEYS[provider]);
+  var models = provider === 'gemini' ? geminiModels_(key)
+    : provider === 'groq' ? GROQ_MODELS : provider === 'openrouter' ? OPENROUTER_MODELS : CLAUDE_MODELS;
+  var override = props.getProperty(provider.toUpperCase() + '_MODEL');
+  if (override) models = [override].concat(models.filter(function (m) { return m !== override; }));
+  var tried = [];
+  for (var i = 0; i < Math.min(models.length, provider === 'gemini' ? 4 : 3); i++) {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (started && Date.now() - started > 100000) return {ok: false, tried: tried};
+      var t0 = Date.now(), r;
+      try { r = providerFetch_(provider, key, models[i], req); }
+      catch (e) { r = {code: 0, error: String(e && e.message || e)}; }
+      if (r.text) return {ok: true, text: r.text, provider: provider, model: models[i], ms: Date.now() - t0, tried: tried};
+      tried.push({provider: provider, model: models[i], code: r.code, error: String(r.error || 'no text').slice(0, 140), ms: Date.now() - t0});
+      if (r.code === 401 || r.code === 403 || /api key|invalid.*key|unauthori|credit balance|billing|quota exceeded/i.test(r.error || '')) return {ok: false, tried: tried}; // bad key / no credit: skip provider
+      if (!BUSY_CODES[r.code] || attempt === 1) break; // not a busy error, or already retried: next model
+      Utilities.sleep(1500); // brief back-off, then retry the same model once
     }
-    lastErr = (j.error && j.error.message) || ('Gemini error ' + code);
-    if ((code === 400 || code === 401 || code === 403) && /API key/i.test(lastErr)) break;
   }
-  return {ok: false, error: lastErr};
+  return {ok: false, tried: tried};
 }
 
-/* Run this once from the editor to check the Gemini key without the app. */
-function testGemini() {
-  var props = PropertiesService.getScriptProperties();
-  var model = props.getProperty('GEMINI_MODEL') || GEMINI_MODELS[0];
-  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
-    method: 'post', contentType: 'application/json', headers: {'x-goog-api-key': props.getProperty('GEMINI_API_KEY')}, muteHttpExceptions: true,
-    payload: JSON.stringify({contents: [{parts: [{text: 'Reply with the single word OK'}]}]})
-  });
-  Logger.log(model + ': ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 300));
+function providerFetch_(provider, key, model, req) {
+  var img = req.image ? 'data:image/jpeg;base64,' + req.image : '';
+  var opts = {method: 'post', contentType: 'application/json', muteHttpExceptions: true}, url;
+  if (provider === 'gemini') {
+    url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+    opts.headers = {'x-goog-api-key': key};
+    opts.payload = JSON.stringify({
+      contents: [{role: 'user', parts: (req.image ? [{inline_data: {mime_type: 'image/jpeg', data: req.image}}] : []).concat([{text: req.prompt}])}],
+      generationConfig: {temperature: 0.2, responseMimeType: 'application/json'}
+    });
+  } else if (provider === 'claude') {
+    url = 'https://api.anthropic.com/v1/messages';
+    opts.headers = {'x-api-key': key, 'anthropic-version': '2023-06-01'};
+    opts.payload = JSON.stringify({model: model, max_tokens: 2500, messages: [{role: 'user', content:
+      (req.image ? [{type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: req.image}}] : []).concat([{type: 'text', text: req.prompt}])}]});
+  } else {
+    url = provider === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+    opts.headers = {'Authorization': 'Bearer ' + key};
+    if (provider === 'openrouter') { opts.headers['HTTP-Referer'] = 'https://msdarshan.github.io/trackmyfood/'; opts.headers['X-Title'] = 'TrackMyFood'; }
+    opts.payload = JSON.stringify({model: model, temperature: 0.2, max_tokens: 3000, messages: [{role: 'user', content:
+      [{type: 'text', text: req.prompt}].concat(img ? [{type: 'image_url', image_url: {url: img}}] : [])}]});
+  }
+  var res = UrlFetchApp.fetch(url, opts), code = res.getResponseCode(), j = {};
+  try { j = JSON.parse(res.getContentText()); } catch (e) {}
+  if (code >= 300) return {code: code, error: (j.error && (j.error.message || j.error)) || ('HTTP ' + code)};
+  var text = '';
+  if (provider === 'gemini') text = ((((j.candidates || [])[0] || {}).content || {}).parts || []).map(function (p) { return p.text || ''; }).join('');
+  else if (provider === 'claude') text = (j.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('');
+  else text = ((((j.choices || [])[0] || {}).message || {}).content) || '';
+  text = String(text);
+  var tk = text.indexOf('<think>'), te = text.indexOf('</think>');
+  if (tk >= 0 && te > tk) text = text.slice(0, tk) + text.slice(te + 8); // reasoning models may prepend their thinking
+  text = text.trim();
+  if (!text) return {code: code, error: provider === 'gemini' && j.promptFeedback && j.promptFeedback.blockReason ? 'blocked: ' + j.promptFeedback.blockReason : 'empty reply'};
+  return {code: code, text: text};
 }
+
+/* Gemini models this key can use, fastest first (Flash-Lite, then Flash), cached for 6 hours. */
+function geminiModels_(key) {
+  var cache = CacheService.getScriptCache(), hit = cache.get('gemini_models');
+  if (hit) return JSON.parse(hit);
+  var list = [];
+  try {
+    var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {headers: {'x-goog-api-key': key}, muteHttpExceptions: true});
+    var j = JSON.parse(res.getContentText());
+    list = (j.models || []).filter(function (m) {
+      var n = String(m.name || '');
+      return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0 && /gemini-[0-9.]+-flash/.test(n) && !/(image|tts|audio|live|thinking|exp|embed|computer)/.test(n);
+    }).map(function (m) { return String(m.name).replace('models/', ''); });
+  } catch (e) {}
+  var ver = function (n) { var v = (n.match(/gemini-([0-9.]+)/) || [0, '0'])[1].split('.'); return (+v[0] || 0) * 100 + (+v[1] || 0); };
+  list.sort(function (a, b) {
+    var la = /lite/.test(a) ? 0 : 1, lb = /lite/.test(b) ? 0 : 1, pa = /preview/.test(a) ? 1 : 0, pb = /preview/.test(b) ? 1 : 0;
+    return la - lb || pa - pb || ver(b) - ver(a);
+  });
+  if (!list.length) list = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-flash-latest'];
+  cache.put('gemini_models', JSON.stringify(list.slice(0, 8)), 21600);
+  return list.slice(0, 8);
+}
+
+/* Admin: try every configured provider with a tiny request and report what works. */
+function aiTest_() {
+  var props = PropertiesService.getScriptProperties(), out = [];
+  AI_ORDER.forEach(function (p) {
+    if (!props.getProperty(AI_KEYS[p])) { out.push({provider: p, configured: false}); return; }
+    var t0 = Date.now(), r = callProvider_(p, {prompt: 'Reply with only this JSON: {"ok":true}'}, Date.now());
+    out.push({provider: p, configured: true, ok: !!r.ok, model: r.model || '', ms: Date.now() - t0, error: r.ok ? '' : ((r.tried || []).map(function (t) { return t.model + ': ' + t.error; }).join(' | ') || 'failed')});
+  });
+  return {ok: true, chain: aiChain_(), results: out, geminiModels: props.getProperty('GEMINI_API_KEY') ? geminiModels_(props.getProperty('GEMINI_API_KEY')) : []};
+}
+
+/* Run from the editor to see the provider report in the execution log. */
+function testAI() { Logger.log(JSON.stringify(aiTest_(), null, 2)); }

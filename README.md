@@ -81,3 +81,12 @@ A PWA can't provide native widgets, so the widget runs in the free **Scriptable*
 - **Custom food**: type a name such as "Whole Truth whey", then tap **Fill nutrition with AI**. It fills the serving size and all 13 nutrients so you can check them against the label.
 - In the manual meal builder, **Add with AI** appends parsed ingredients.
 - Everything uses the same `vision` backend action, text-only when there's no photo.
+
+## AI fallbacks
+The backend tries providers in order and moves on when one is busy (HTTP 429/5xx), retrying each model once after 1.5 s:
+1. **Google Gemini**: models are discovered from your key (Flash-Lite first, then Flash) and cached for 6 h. Up to 4 models are tried.
+2. **Groq** (`GROQ_API_KEY`, free tier at console.groq.com)
+3. **OpenRouter** (`OPENROUTER_API_KEY`, free models via `openrouter/free`)
+4. **Claude** (`ANTHROPIC_API_KEY`, paid)
+
+Providers without a key are skipped, and so are bad keys or keys with no credit. Optional script properties: `AI_CHAIN` (custom order), and `GEMINI_MODEL` / `GROQ_MODEL` / `OPENROUTER_MODEL` / `CLAUDE_MODEL` (model to try first). Admins can run **Settings → Photo & AI → Test AI providers**, or `testAI()` in the editor.

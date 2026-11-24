@@ -271,7 +271,7 @@ function searchFoods(q){
 }
 
 /* ---------- state ---------- */
-const APP_VERSION='16';
+const APP_VERSION='17';
 const KEY='tmf_v1';
 const defCfg={scriptUrl:'',token:'',aiMode:'script',apiKey:'',model:'claude-sonnet-5-5'};
 function defaultState(){return{entries:{},meals:{},rules:{},foods:{},weights:{},settings:{id:'settings',targets:{...DEF_T},updatedAt:0},queue:[],cfg:{...defCfg},lastSync:0}}
@@ -464,6 +464,8 @@ async function fileToJpeg(file){
     return c.toDataURL('image/jpeg',.85);
   }finally{URL.revokeObjectURL(url)}
 }
+let LAST_AI=null;
+const AI_NAMES={gemini:'Google Gemini',groq:'Groq',openrouter:'OpenRouter',claude:'Claude'};
 // One AI call for photos (b64 set) and text-only requests (b64 empty).
 async function aiCall(prompt,b64){
   if(S.cfg.aiMode==='direct'){
@@ -472,6 +474,7 @@ async function aiCall(prompt,b64){
     return (j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
   }
   const j=await api(b64?{action:'vision',image:b64,prompt}:{action:'vision',prompt});
+  LAST_AI=j.provider?{provider:j.provider,model:j.model,fallback:(j.tried||[]).length>0}:null;
   return j.text||'';
 }
 function parseJSON(txt){
@@ -495,7 +498,7 @@ function toItems(out){
   });
   return{items,notes:out.notes||'',title:out.title||'',serving:out.serving||''};
 }
-async function analysePhoto(dataUrl,hint){return toItems(parseJSON(await aiCall(photoPrompt(hint),dataUrl.split(',')[1])))}
+async function analysePhoto(dataUrl,hint){LAST_AI=null;return toItems(parseJSON(await aiCall(photoPrompt(hint),dataUrl.split(',')[1])))}
 const JSON_ITEM_SPEC=`{"title":"short name for the whole meal or dish","serving":"what one serving is, e.g. 1 bowl","items":[{"name":"string","db_name":"string or null","quantity":number,"unit":"string","grams":number,"confidence":"high|medium|low","per100":{"kcal":0,"pro":0,"carb":0,"fat":0,"fib":0,"sug":0,"sfat":0,"na":0,"k":0,"ca":0,"fe":0,"vc":0,"va":0,"vd":0,"b12":0}}],"notes":"one short sentence"}`;
 function describePrompt(text){
   const names=allFoods().map(f=>f.name).join('; ');
@@ -512,7 +515,7 @@ User input: """${String(text).replace(/"""/g,'"')}"""
 Reply with ONLY a JSON object, no markdown:
 ${JSON_ITEM_SPEC}`;
 }
-async function analyseText(text){return toItems(parseJSON(await aiCall(describePrompt(text),'')))}
+async function analyseText(text){LAST_AI=null;return toItems(parseJSON(await aiCall(describePrompt(text),'')))}
 function foodPrompt(name,serving,grams){
   return `You are a nutrition assistant specialised in Indian foods and Indian packaged products.
 Estimate the nutrition for ONE serving of: "${String(name).replace(/"/g,"'")}"${serving?`, serving described as "${String(serving).replace(/"/g,"'")}"`:''}${grams?`, serving weight ${grams} g`:''}.
@@ -717,8 +720,10 @@ function drawReview(sh){
     <label class="switch"><input type="checkbox" id="psave" ${mode==='meal'?'checked':''}> <span>Save to My Meals for one-tap logging</span></label>
     <label class="switch"><input type="checkbox" id="pfood"> <span>Save as a custom food</span></label>
     <div id="pfoodbox" class="grid2" hidden><div><label class="f">Serving name</label><input id="pserv" value="${esc(ctx.serving||'1 serving')}"></div><div><label class="f">This makes … servings</label><input id="pservn" type="number" inputmode="decimal" min="0.5" step="0.5" value="1"></div></div>`;
+  if(ctx.via===undefined)ctx.via=LAST_AI;
   $('#pbody',sh).innerHTML=`
     ${ctx.notes?`<div class="hint">${esc(ctx.notes)}</div>`:''}
+    ${ctx.via?`<div class="hint">Read by ${esc(AI_NAMES[ctx.via.provider]||ctx.via.provider)} · ${esc(ctx.via.model)}${ctx.via.fallback?' (backup, main model was busy)':''}</div>`:''}
     ${rows||'<div class="empty">No items found. Add them manually below.</div>'}
     <div class="mealacts"><button data-act="padd">${svg(I.plus)} Add missing item</button>${ctx.dataUrl?'':`<button data-act="predo">${svg(I.spark)} Edit text</button>`}</div>
     <div id="ptot"></div>
@@ -915,10 +920,17 @@ function settingsSub(sub){
       <label class="f">Apps Script Web App URL</label><input data-cfg="scriptUrl" value="${esc(c.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off">
       <label class="f">Token</label><input data-cfg="token" type="password" value="${esc(c.token)}" autocapitalize="off">
       <div class="hint">Normally filled in by your setup link. Only change these if you know what you're doing.</div></details>`;
-  if(sub==='ai')return `<div class="card"><label class="f" style="margin-top:0">AI provider</label><select data-cfg="aiMode"><option value="script" ${c.aiMode==='script'?'selected':''}>Google Gemini via Apps Script (free tier)</option><option value="direct" ${c.aiMode==='direct'?'selected':''}>Claude API directly from this phone (paid)</option></select>
+  if(sub==='ai'){
+    const admin=S.me&&S.me.role==='admin';
+    return `<div class="card"><label class="f" style="margin-top:0">AI provider</label><select data-cfg="aiMode"><option value="script" ${c.aiMode==='script'?'selected':''}>Through your Google Apps Script, with automatic backups (free)</option><option value="direct" ${c.aiMode==='direct'?'selected':''}>Claude API directly from this phone (paid)</option></select>
       ${c.aiMode==='direct'?`<label class="f">Claude API key</label><input data-cfg="apiKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-ant-…" autocapitalize="off"><div class="hint">Stored only on this phone.</div><label class="f">Claude model</label><input data-cfg="model" value="${esc(c.model)}" autocapitalize="off">`
-        :`<div class="hint">Uses the Gemini key saved in your Google Apps Script, so the key never touches this phone. On the free tier, Google may use photos and text to improve its products.</div>`}</div>
+        :`<div class="hint">Keys are kept in your Google Apps Script and never touch this phone.</div>`}</div>
+      ${c.aiMode==='script'?`<div class="set-sec">When a model is busy</div><div class="card">
+        <ol class="steps" style="margin-top:0"><li><b>Google Gemini</b>: retries once, then tries other Gemini models your key can use.</li><li><b>Groq</b> (free tier, optional)</li><li><b>OpenRouter</b> free models (optional)</li><li><b>Claude</b> (paid, optional)</li></ol>
+        <div class="hint">A backup is only used if its key is added in Apps Script → Project Settings → Script properties: <code>GROQ_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>. Free providers may use what you send to improve their models.</div>
+        ${admin?`<button class="btn ghost" data-act="aiTest">${svg(I.spark)} Test AI providers</button><div id="aitest"></div>`:''}</div>`:''}
       <div class="card"><b>Used for</b><div class="hint">Reading meal photos, <b>Describe with AI</b>, <b>Create meal with AI</b>, and <b>Fill nutrition with AI</b> on custom foods. Always check AI estimates before saving.</div></div>`;
+  }
   if(sub==='widget')return `<div class="card"><div class="hint">Shows today's calories and protein on your home screen or lock screen, using the free <b>Scriptable</b> app.</div>
     <ol class="steps"><li>Install <b>Scriptable</b> from the App Store.</li><li>Tap <b>Copy widget script</b> below. Your personal link is already inside it.</li><li>In Scriptable tap <b>+</b>, paste, and name it <b>TrackMyFood</b>. Tap ▶︎ once to preview it.</li><li>Long-press the home screen → <b>+</b> → Scriptable → Small or Medium → Add. Long-press the widget → <b>Edit Widget</b> → Script: <b>TrackMyFood</b>.</li></ol>
     <button class="btn" data-act="copyWidget">Copy widget script</button>
@@ -1038,6 +1050,12 @@ const A={
     put(o.kind,rec);closeSheet();render();if(o.kind==='rule')checkSchedule(true);toast('Saved')},
   cdel:()=>{const o=top()._o;remove(o.kind,o.rec);closeSheet();render();toast('Deleted')},
   review:()=>checkSchedule(true),
+  aiTest:async()=>{const box=$('#aitest'),b=$('[data-act=aiTest]');if(!box)return;b.disabled=true;box.innerHTML='<div class="spinner"></div><div class="hint" style="text-align:center">Asking each provider… this can take up to a minute</div>';
+    try{const j=await api({action:'aiTest'});
+      box.innerHTML=`<table class="micro" style="margin-top:10px">${j.results.map(r=>`<tr><td><b>${esc(AI_NAMES[r.provider]||r.provider)}</b>${r.model?`<br><small style="color:var(--mute)">${esc(r.model)}</small>`:''}</td><td style="text-align:right">${!r.configured?'<span class="badge">no key</span>':r.ok?`<span class="badge ok">working · ${(r.ms/1000).toFixed(1)}s</span>`:'<span class="badge low">failing</span>'}</td></tr>${r.configured&&!r.ok?`<tr><td colspan="2"><small style="color:var(--mute)">${esc(r.error)}</small></td></tr>`:''}`).join('')}</table>
+        <div class="hint">Order in use: ${esc((j.chain||[]).map(p=>AI_NAMES[p]||p).join(' → ')||'none')}</div>`}
+    catch(e){box.innerHTML=`<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`}
+    b.disabled=false},
   macro:d=>{if(d.swap)closeSheet();openBreakdown(d.k)},
   logWeight:()=>openWeight(),
   saveWeight:()=>{const sh=top(),kg=+$('#wkg',sh).value,date=$('#wdate',sh).value||today();
